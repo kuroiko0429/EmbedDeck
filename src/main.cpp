@@ -3,6 +3,7 @@
 #include <RotaryEncoder.h>
 #include "debounced_button.h"
 #include "usb_protocol.h"
+#include "ui_layout.h"
 
 namespace {
 constexpr int kPower = 15, kEncoderA = 4, kEncoderB = 5;
@@ -74,43 +75,45 @@ void render() {
     const bool recent = host.received && uint32_t(millis() - host.lastSeen) < 3500;
     const uint16_t accent = online ? kGreen : kYellow;
     ui.fillSprite(kBg);
-    label("EMBEDDECK", 10, 9, kFg, 2);
-    ui.fillCircle(229, 13, 3, accent);
-    label(online ? "HYPRLAND" : "OFFLINE", 239, 9, accent);
-    ui.drawFastHLine(10, 29, 300, kPanel);
+    label("EMBEDDECK", 10, 12, kFg, 2);
+    ui.fillCircle(14, 38, 3, accent);
+    label(online ? "HYPRLAND / USB" : "WAITING FOR HOST", 26, 34, accent);
+    ui.drawFastHLine(10, 51, 150, kPanel);
 
-    ui.fillRoundRect(10, 38, 110, 78, 7, kPanel);
-    label("WORKSPACE", 19, 45, kMuted);
+    ui.fillRoundRect(10, 61, 150, 99, 8, kPanel);
+    label("WORKSPACE", 19, 70, kMuted);
     char number[16];
     if (online) snprintf(number, sizeof(number), "%02d", host.workspace);
     else snprintf(number, sizeof(number), "--");
-    label(number, 21, 62, accent, strlen(number) > 2 ? 4 : 6);
+    const int numberSize = strlen(number) > 3 ? 4 : (strlen(number) > 2 ? 6 : 7);
+    ui.setTextSize(numberSize); ui.setTextDatum(MC_DATUM); ui.setTextColor(accent);
+    ui.drawString(number, 85, 117, 1);
 
-    label(online ? "DESKTOP CONTROL" : "USB CDC / JSON", 133, 42, accent);
-    label("TURN   prev / next", 133, 61);
-    label("PRESS  last workspace", 133, 77);
-    label("USER   workspace 1", 133, 93);
-    char hint[36];
-    if (online) snprintf(hint, sizeof(hint), "%s", activity);
-    else if (recent && host.error[0]) snprintf(hint, sizeof(hint), "%.31s", host.error);
+    char hint[25];
+    if (online) snprintf(hint, sizeof(hint), "%.24s", activity);
+    else if (recent && host.error[0]) snprintf(hint, sizeof(hint), "%.24s", host.error);
     else snprintf(hint, sizeof(hint), "Start embeddeck daemon");
     // The bundled font is ASCII only; never render UTF-8 bytes as random glyphs.
     for (char* p = hint; *p; ++p) if ((unsigned char)*p < 32 || (unsigned char)*p > 126) *p = '?';
-    label(hint, 133, 109, kMuted);
+    label(hint, 12, 169, kMuted);
 
-    const int first = online && host.workspace > 10 ? ((host.workspace - 1) / 10) * 10 + 1 : 1;
+    const int first = WorkspaceUI::firstWorkspace(online ? host.workspace : 1);
     for (int slot = 0; slot < 10; ++slot) {
-        const int id = first + slot, x = 10 + slot * 30;
+        const int id = first + slot;
+        const auto cell = WorkspaceUI::workspaceCell(slot);
         const bool active = online && host.workspace == id;
-        ui.fillRoundRect(x, 132, 26, 23, 4, active ? kGreen : kPanel);
+        ui.fillRoundRect(cell.x, cell.y, cell.w, cell.h, 4, active ? kGreen : kPanel);
         ui.setTextSize(1); ui.setTextDatum(MC_DATUM);
         ui.setTextColor(active ? kBg : (host.occupied(id) && online ? kFg : kMuted));
         char item[12]; snprintf(item, sizeof(item), "%d", id);
-        ui.drawString(item, x + 13, 143, 1);
-        if (!active && host.occupied(id) && online) ui.drawFastHLine(x + 8, 152, 10, kGreen);
+        ui.drawString(item, cell.x + cell.w / 2, cell.y + 11, 1);
+        if (!active && host.occupied(id) && online) ui.drawFastHLine(cell.x + 8, cell.y + 21, 10, kGreen);
     }
-    label("USB serial", 10, 161, kMuted);
-    label(online ? "LIVE / synced" : "No actions while offline", 133, 161, accent);
+    ui.drawFastHLine(10, 249, 150, kPanel);
+    label("TURN", 12, 259, kGreen); label("prev / next", 53, 259);
+    label("PRESS", 12, 275, kGreen); label("last workspace", 53, 275);
+    label("USER", 12, 291, kGreen); label("workspace 1", 53, 291);
+    label(online ? "LIVE / synced" : "OFFLINE / no actions", 12, 311, accent);
     ui.pushSprite(0, 0);
 }
 
@@ -146,11 +149,11 @@ void setup() {
     Serial.begin(115200);
     attachInterrupt(digitalPinToInterrupt(kEncoderA), tickEncoder, CHANGE);
     attachInterrupt(digitalPinToInterrupt(kEncoderB), tickEncoder, CHANGE);
-    display.init(); display.setRotation(3);
+    display.init(); display.setRotation(WorkspaceUI::kRotation);
     pinMode(TFT_BL, OUTPUT); digitalWrite(TFT_BL, HIGH);
     display.fillScreen(kBg);
     ui.setColorDepth(16);
-    spriteReady = ui.createSprite(320, 170) != nullptr;
+    spriteReady = ui.createSprite(WorkspaceUI::kWidth, WorkspaceUI::kHeight) != nullptr;
     if (!spriteReady) {
         display.setTextColor(kRed, kBg); display.drawString("UI allocation failed", 10, 30, 2);
     }
