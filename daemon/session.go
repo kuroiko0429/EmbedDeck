@@ -111,13 +111,13 @@ func serveSession(ctx context.Context, p io.ReadWriteCloser, c *Controller, even
 			}
 		case f := <-frames:
 			if f.Type == "status" {
-				log.Printf("device state: workspace=%d connected=%t rx=%d mode=%s axis=%s width_mode=%s", *f.Workspace, *f.Connected, *f.RX, f.Mode, f.FocusAxis, f.WidthMode)
+				log.Printf("device state: workspace=%d connected=%t rx=%d mode=%s axis=%s width_mode=%s float_action=%s window_floating=%t window_ready=%t window_x=%d window_y=%d window_width=%d window_height=%d", *f.Workspace, *f.Connected, *f.RX, f.Mode, f.FocusAxis, f.WidthMode, f.FloatAction, *f.WindowFloating, *f.WindowReady, *f.WindowX, *f.WindowY, *f.WindowWidth, *f.WindowHeight)
 				continue
 			}
 			e := c.Handle(ctx, f)
 			if f.Seq != nil {
-				log.Printf("action: seq=%d type=%s button=%s gesture=%s mode=%s axis=%s width_mode=%s workspace=%d window_width=%d ok=%t error=%v", *f.Seq, f.Type, f.Button, f.Action, c.State.Mode, c.State.FocusAxis, c.State.WidthMode, c.State.Workspace, c.State.WindowWidth, e == nil, e)
-				a := Ack{V: 2, Type: "ack", Seq: *f.Seq, OK: e == nil}
+				log.Printf("action: seq=%d type=%s button=%s gesture=%s mode=%s axis=%s width_mode=%s workspace=%d window_width=%d float_action=%s window_floating=%t window_ready=%t window_x=%d window_y=%d window_height=%d ok=%t error=%v", *f.Seq, f.Type, f.Button, f.Action, c.State.Mode, c.State.FocusAxis, c.State.WidthMode, c.State.Workspace, c.State.WindowWidth, c.State.FloatAction, c.State.WindowFloating, c.State.WindowReady, c.State.WindowX, c.State.WindowY, c.State.WindowHeight, e == nil, e)
+				a := Ack{V: 3, Type: "ack", Seq: *f.Seq, OK: e == nil}
 				if e != nil {
 					a.Error = e.Error()
 				}

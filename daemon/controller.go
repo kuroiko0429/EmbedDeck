@@ -7,33 +7,39 @@ import (
 )
 
 type State struct {
-	V            int    `json:"v"`
-	Type         string `json:"type"`
-	Workspace    int    `json:"workspace"`
-	Name         string `json:"name"`
-	Workspaces   []int  `json:"workspaces"`
-	Backend      string `json:"backend"`
-	Connected    bool   `json:"connected"`
-	Error        string `json:"error"`
-	Mode         string `json:"mode"`
-	FocusAxis    string `json:"focus_axis"`
-	WidthMode    string `json:"width_mode"`
-	Layout       string `json:"layout"`
-	App          string `json:"app"`
-	WindowWidth  int    `json:"window_width"`
-	WidthPercent int    `json:"width_percent"`
-	TiledWindow  bool   `json:"-"`
+	V              int    `json:"v"`
+	Type           string `json:"type"`
+	Workspace      int    `json:"workspace"`
+	Name           string `json:"name"`
+	Workspaces     []int  `json:"workspaces"`
+	Backend        string `json:"backend"`
+	Connected      bool   `json:"connected"`
+	Error          string `json:"error"`
+	Mode           string `json:"mode"`
+	FocusAxis      string `json:"focus_axis"`
+	WidthMode      string `json:"width_mode"`
+	Layout         string `json:"layout"`
+	App            string `json:"app"`
+	WindowWidth    int    `json:"window_width"`
+	FloatAction    string `json:"float_action"`
+	WindowFloating bool   `json:"window_floating"`
+	WindowReady    bool   `json:"window_ready"`
+	WindowX        int    `json:"window_x"`
+	WindowY        int    `json:"window_y"`
+	WindowHeight   int    `json:"window_height"`
+	WidthPercent   int    `json:"width_percent"`
+	TiledWindow    bool   `json:"-"`
 }
 type Backend interface {
 	Snapshot(context.Context) (State, error)
 	Focus(context.Context, int) error
 }
 type Controller struct {
-	Backend                    Backend
-	Max                        int
-	current, previous          int
-	State                      State
-	mode, focusAxis, widthMode string
+	Backend                                 Backend
+	Max                                     int
+	current, previous                       int
+	State                                   State
+	mode, focusAxis, widthMode, floatAction string
 }
 
 func (c *Controller) Refresh(ctx context.Context) State {
@@ -50,8 +56,12 @@ func (c *Controller) Refresh(ctx context.Context) State {
 	if c.widthMode == "" {
 		c.widthMode = "fine"
 	}
+	if c.floatAction == "" {
+		c.floatAction = "move_x"
+	}
+	s.FloatAction = c.floatAction
 	s.Mode, s.FocusAxis, s.WidthMode = c.mode, c.focusAxis, c.widthMode
-	s.V = 2
+	s.V = 3
 	s.Type = "state"
 	s.Backend = "hyprland"
 	if s.Workspaces == nil {
@@ -79,6 +89,8 @@ func (c *Controller) Handle(ctx context.Context, f Frame) error {
 			case "focus":
 				c.mode = "width"
 			case "width":
+				c.mode = "float"
+			case "float":
 				c.mode = "workspace"
 			}
 		} else {
@@ -88,7 +100,18 @@ func (c *Controller) Handle(ctx context.Context, f Frame) error {
 		return nil
 	}
 	if f.Type == "button" && f.Button == "knob" && f.Action == "click" && c.mode != "workspace" {
-		if c.mode == "focus" {
+		if c.mode == "float" {
+			switch c.floatAction {
+			case "move_x":
+				c.floatAction = "move_y"
+			case "move_y":
+				c.floatAction = "resize_w"
+			case "resize_w":
+				c.floatAction = "resize_h"
+			default:
+				c.floatAction = "move_x"
+			}
+		} else if c.mode == "focus" {
 			if c.focusAxis == "horizontal" {
 				c.focusAxis = "vertical"
 			} else {
@@ -103,6 +126,9 @@ func (c *Controller) Handle(ctx context.Context, f Frame) error {
 		}
 		c.Refresh(ctx)
 		return nil
+	}
+	if c.mode == "float" {
+		return c.handleFloat(ctx, f, s)
 	}
 	if c.mode != "workspace" {
 		return c.handleLayout(ctx, f, s)

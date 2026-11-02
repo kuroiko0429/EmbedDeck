@@ -173,15 +173,19 @@ func (h Hyprland) windowState(ctx context.Context, p string, s *State) {
 			ID int `json:"id"`
 		} `json:"workspace"`
 	}
-	if json.Unmarshal(b, &w) != nil || w.Address == "" || !w.Mapped || w.Hidden || len(w.Size) != 2 || w.Size[0] <= 0 || w.Size[0] > 100000 || w.Size[1] <= 0 {
+	if json.Unmarshal(b, &w) != nil || w.Address == "" || !w.Mapped || w.Hidden || len(w.Size) != 2 || w.Size[0] <= 0 || w.Size[0] > 100000 || w.Size[1] <= 0 || w.Size[1] > 100000 {
 		return
 	}
+	windowJSON := append([]byte(nil), b...)
 	s.App = asciiLabel(w.Class)
 	s.WindowWidth = w.Size[0]
 	s.TiledWindow = w.Floating != nil && !*w.Floating && w.Fullscreen != nil && *w.Fullscreen == 0 && w.Workspace.ID == s.Workspace
 	b, err = request(ctx, p, "j/monitors")
 	if err != nil {
 		return
+	}
+	if editable, _, e := decodeEditable(windowJSON, b, s.Workspace); e == nil {
+		applyEditable(s, editable)
 	}
 	var monitors []struct {
 		ID            int `json:"id"`

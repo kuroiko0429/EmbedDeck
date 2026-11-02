@@ -13,19 +13,26 @@ const maxFrame = 1023
 var errFrame = errors.New("invalid protocol frame")
 
 type Frame struct {
-	V         int     `json:"v"`
-	Type      string  `json:"type"`
-	Firmware  string  `json:"firmware,omitempty"`
-	Seq       *uint32 `json:"seq,omitempty"`
-	Delta     *int    `json:"delta,omitempty"`
-	Button    string  `json:"button,omitempty"`
-	Action    string  `json:"action,omitempty"`
-	Workspace *int    `json:"workspace,omitempty"`
-	Connected *bool   `json:"connected,omitempty"`
-	RX        *uint32 `json:"rx,omitempty"`
-	Mode      string  `json:"mode,omitempty"`
-	FocusAxis string  `json:"focus_axis,omitempty"`
-	WidthMode string  `json:"width_mode,omitempty"`
+	V              int     `json:"v"`
+	Type           string  `json:"type"`
+	Firmware       string  `json:"firmware,omitempty"`
+	Seq            *uint32 `json:"seq,omitempty"`
+	Delta          *int    `json:"delta,omitempty"`
+	Button         string  `json:"button,omitempty"`
+	Action         string  `json:"action,omitempty"`
+	Workspace      *int    `json:"workspace,omitempty"`
+	Connected      *bool   `json:"connected,omitempty"`
+	RX             *uint32 `json:"rx,omitempty"`
+	Mode           string  `json:"mode,omitempty"`
+	FocusAxis      string  `json:"focus_axis,omitempty"`
+	WidthMode      string  `json:"width_mode,omitempty"`
+	FloatAction    string  `json:"float_action,omitempty"`
+	WindowFloating *bool   `json:"window_floating,omitempty"`
+	WindowReady    *bool   `json:"window_ready,omitempty"`
+	WindowX        *int    `json:"window_x,omitempty"`
+	WindowY        *int    `json:"window_y,omitempty"`
+	WindowWidth    *int    `json:"window_width,omitempty"`
+	WindowHeight   *int    `json:"window_height,omitempty"`
 }
 
 func decodeFrame(b []byte) (Frame, error) {
@@ -63,7 +70,7 @@ func decodeFrame(b []byte) (Frame, error) {
 	}
 	d = json.NewDecoder(bytes.NewReader(b))
 	d.DisallowUnknownFields()
-	if d.Decode(&f) != nil || f.V != 2 {
+	if d.Decode(&f) != nil || f.V != 3 {
 		return f, errFrame
 	}
 	allowed := map[string]bool{"v": true, "type": true}
@@ -75,7 +82,22 @@ func decodeFrame(b []byte) (Frame, error) {
 		allowed["mode"] = true
 		allowed["focus_axis"] = true
 		allowed["width_mode"] = true
-		if (f.Mode != "workspace" && f.Mode != "focus" && f.Mode != "width") || (f.FocusAxis != "horizontal" && f.FocusAxis != "vertical") || (f.WidthMode != "fine" && f.WidthMode != "preset") {
+		for _, key := range []string{"float_action", "window_floating", "window_ready", "window_x", "window_y", "window_width", "window_height"} {
+			allowed[key] = true
+			if !keys[key] {
+				return f, errFrame
+			}
+		}
+		if !validFloatAction(f.FloatAction) || f.WindowFloating == nil || f.WindowReady == nil || f.WindowX == nil || f.WindowY == nil || f.WindowWidth == nil || f.WindowHeight == nil {
+			return f, errFrame
+		}
+		if *f.WindowX < -100000 || *f.WindowX > 100000 || *f.WindowY < -100000 || *f.WindowY > 100000 || *f.WindowWidth < 0 || *f.WindowWidth > 100000 || *f.WindowHeight < 0 || *f.WindowHeight > 100000 {
+			return f, errFrame
+		}
+		if *f.WindowReady && (*f.WindowWidth == 0 || *f.WindowHeight == 0) {
+			return f, errFrame
+		}
+		if (f.Mode != "workspace" && f.Mode != "focus" && f.Mode != "width" && f.Mode != "float") || (f.FocusAxis != "horizontal" && f.FocusAxis != "vertical") || (f.WidthMode != "fine" && f.WidthMode != "preset") {
 			return f, errFrame
 		}
 		if f.Workspace == nil || f.Connected == nil || f.RX == nil || *f.Workspace < 0 || (*f.Connected && *f.Workspace < 1) {

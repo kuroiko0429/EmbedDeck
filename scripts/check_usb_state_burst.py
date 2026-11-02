@@ -19,9 +19,9 @@ with serial.Serial(port=None, baudrate=115200, timeout=.05) as device:
             frame = json.loads(device.readline())
         except (ValueError, UnicodeError):
             continue
-        if frame.get('v') == 2 and frame.get('type') == 'hello': break
+        if frame.get('v') == 3 and frame.get('type') == 'hello': break
     else:
-        raise SystemExit('No v2 firmware hello')
+        raise SystemExit('No v3 firmware hello')
     state['mode'] = 'focus'
     baseline = None
     end = time.monotonic() + 3
@@ -38,7 +38,8 @@ with serial.Serial(port=None, baudrate=115200, timeout=.05) as device:
     count = 16
     payload = b''
     for n in range(count):
-        state['mode'] = 'width' if n % 2 == 0 else 'focus'
+        state['mode'] = ('width', 'float', 'focus', 'workspace')[n % 4]
+        state['float_action'] = ('move_x', 'move_y', 'resize_w', 'resize_h')[n % 4]
         payload = json.dumps(state, separators=(',', ':')).encode() + b'\n'
         device.write(payload)
         end = time.monotonic() + .15

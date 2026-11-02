@@ -22,9 +22,9 @@ def finish(*_):
 
 signal.signal(signal.SIGTERM, finish)
 signal.signal(signal.SIGINT, finish)
-with fixture(preferred=args.workspace) as (workspace, windows):
+with fixture(preferred=args.workspace, window_lifetime=int(args.seconds) + 60, preserve_navigation=True) as (workspace, windows):
     print(f'READY workspace={workspace} windows={windows}', flush=True)
     end = time.monotonic() + args.seconds
     while time.monotonic() < end and not stop.exists() and not interrupted:
         time.sleep(.2)
-print('CLEANED: fixture windows closed and original workspace/focus restored', flush=True)
+print('CLEANED: fixture windows closed; original desktop restored unless the user navigated elsewhere', flush=True)

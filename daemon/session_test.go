@@ -37,11 +37,11 @@ func TestSessionHelloActionStatusAndCancel(t *testing.T) {
 	if s := read(); s["workspace"] != float64(2) || s["type"] != "state" {
 		t.Fatal(s)
 	}
-	io.WriteString(dev, strings.Repeat("x", 2048)+"\n{\"v\":2,\"type\":\"hello\",\"firmware\":\"0.3.0\"}\n")
+	io.WriteString(dev, strings.Repeat("x", 2048)+"\n{\"v\":3,\"type\":\"hello\",\"firmware\":\"0.4.0\"}\n")
 	if s := read(); s["workspace"] != float64(2) {
 		t.Fatal(s)
 	}
-	io.WriteString(dev, "{\"v\":2,\"type\":\"encoder\",\"seq\":1,\"delta\":1}\n")
+	io.WriteString(dev, "{\"v\":3,\"type\":\"encoder\",\"seq\":1,\"delta\":1}\n")
 	for {
 		m := read()
 		if m["type"] == "ack" {
@@ -80,8 +80,8 @@ func (p chunkPort) Read(b []byte) (int, error) {
 	return p.Conn.Read(b)
 }
 
-func TestSessionBoundedV2StateWithShortReadsWrites(t *testing.T) {
-	b := &memoryBackend{state: State{Workspace: 2147483647, Connected: true, Name: safeName(strings.Repeat("<", 63)), Layout: safeName(strings.Repeat("<", 63)), App: strings.Repeat("<", 24), WindowWidth: 100000, WidthPercent: 100}}
+func TestSessionBoundedV3StateWithShortReadsWrites(t *testing.T) {
+	b := &memoryBackend{state: State{Workspace: 2147483647, Connected: true, Name: safeName(strings.Repeat("<", 63)), Layout: safeName(strings.Repeat("<", 63)), App: strings.Repeat("<", 24), WindowWidth: 100000, WindowHeight: 100000, WindowX: -100000, WindowY: -100000, WindowReady: true, WindowFloating: true, WidthPercent: 100}}
 	for i := 0; i < 32; i++ {
 		b.state.Workspaces = append(b.state.Workspaces, 2147483647-i)
 	}
@@ -105,21 +105,21 @@ func TestSessionBoundedV2StateWithShortReadsWrites(t *testing.T) {
 	if err = json.Unmarshal(line, &state); err != nil {
 		t.Fatal(err)
 	}
-	for _, key := range []string{"v", "type", "workspace", "name", "workspaces", "backend", "connected", "error", "mode", "focus_axis", "width_mode", "layout", "app", "window_width", "width_percent"} {
+	for _, key := range []string{"v", "type", "workspace", "name", "workspaces", "backend", "connected", "error", "mode", "focus_axis", "width_mode", "layout", "app", "window_width", "width_percent", "float_action", "window_ready", "window_floating", "window_x", "window_y", "window_height"} {
 		if _, ok := state[key]; !ok {
 			t.Fatal("missing", key)
 		}
 	}
-	if state["v"] != float64(2) || state["mode"] != "workspace" || state["app"] != strings.Repeat("<", 24) {
+	if state["v"] != float64(3) || state["mode"] != "workspace" || state["app"] != strings.Repeat("<", 24) {
 		t.Fatal(state)
 	}
-	io.WriteString(dev, `{"v":2,"type":"button","seq":5,"button":"user","action":"click"}`+"\n")
+	io.WriteString(dev, `{"v":3,"type":"button","seq":5,"button":"user","action":"click"}`+"\n")
 	line, err = r.ReadBytes('\n')
 	if err != nil {
 		t.Fatal(err)
 	}
 	var ack Ack
-	if err = json.Unmarshal(line, &ack); err != nil || ack.V != 2 || !ack.OK || ack.Seq != 5 {
+	if err = json.Unmarshal(line, &ack); err != nil || ack.V != 3 || !ack.OK || ack.Seq != 5 {
 		t.Fatal(string(line), err)
 	}
 	line, err = r.ReadBytes('\n')
@@ -174,18 +174,19 @@ func TestSessionRejectsOldGesturesAndNacksUnavailableLayout(t *testing.T) {
 	}
 	io.WriteString(dev, strings.Join([]string{
 		`{"v":1,"type":"encoder","seq":1,"delta":1}`,
-		`{"v":2,"type":"button","seq":2,"button":"user","action":"press"}`,
-		`{"v":2,"type":"button","seq":3,"button":"user","action":"release"}`,
-		`{"v":2,"type":"encoder","seq":4,"delta":0}`,
-		`{"v":2,"type":"encoder","seq":5,"delta":33}`,
-		`{"v":2,"type":"encoder","seq":99,"delta":1}`,
+		`{"v":2,"type":"encoder","seq":6,"delta":1}`,
+		`{"v":3,"type":"button","seq":2,"button":"user","action":"press"}`,
+		`{"v":3,"type":"button","seq":3,"button":"user","action":"release"}`,
+		`{"v":3,"type":"encoder","seq":4,"delta":0}`,
+		`{"v":3,"type":"encoder","seq":5,"delta":33}`,
+		`{"v":3,"type":"encoder","seq":99,"delta":1}`,
 	}, "\n")+"\n")
 	line, err := r.ReadBytes('\n')
 	if err != nil {
 		t.Fatal(err)
 	}
 	var ack Ack
-	if err = json.Unmarshal(line, &ack); err != nil || ack.V != 2 || ack.Seq != 99 || ack.OK || ack.Error == "" {
+	if err = json.Unmarshal(line, &ack); err != nil || ack.V != 3 || ack.Seq != 99 || ack.OK || ack.Error == "" {
 		t.Fatal(string(line), err)
 	}
 	line, err = r.ReadBytes('\n')

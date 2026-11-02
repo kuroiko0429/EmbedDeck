@@ -11,8 +11,9 @@ struct RGB {
     constexpr bool operator!=(RGB other) const { return !(*this == other); }
 };
 constexpr RGB kOff{0, 0, 0}, kGreen{55, 210, 70}, kBlue{50, 105, 245}, kYellow{245, 180, 20}, kOffline{48, 20, 0};
+constexpr RGB kMagenta{211, 134, 155};
 using Frame = std::array<RGB, kCount>;
-enum class Mode { Workspace, Focus, Width };
+enum class Mode { Workspace, Focus, Width, Floating };
 
 inline RGB scaled(RGB color, unsigned level) {
     return {uint8_t(unsigned(color.r) * level / 255), uint8_t(unsigned(color.g) * level / 255), uint8_t(unsigned(color.b) * level / 255)};
@@ -41,7 +42,7 @@ public:
             }
             return frame;
         }
-        const RGB color = mode == Mode::Focus ? kBlue : kGreen;
+        const RGB color = mode == Mode::Floating ? kMagenta : (mode == Mode::Focus ? kBlue : kGreen);
         frame[head_] = color;
         const uint32_t age = now - lastTurn_;
         if (turned_ && age < kTailMs) {

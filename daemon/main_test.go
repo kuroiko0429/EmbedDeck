@@ -57,7 +57,7 @@ func TestProbeNeverOpensSerial(t *testing.T) {
 		t.Fatalf("probe frame too large: %d", out.Len()-1)
 	}
 	var s State
-	if e = json.Unmarshal(out.Bytes(), &s); e != nil || !s.Connected || s.Workspace != 2 || s.V != 2 || s.Backend != "hyprland" {
+	if e = json.Unmarshal(out.Bytes(), &s); e != nil || !s.Connected || s.Workspace != 2 || s.V != 3 || s.Backend != "hyprland" {
 		t.Fatal(out.String(), e)
 	}
 	for _, args := range [][]string{{"--max-workspace", "0"}, {"--max-workspace", "10001"}, {"extra"}} {

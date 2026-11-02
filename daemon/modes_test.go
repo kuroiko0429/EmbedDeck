@@ -8,9 +8,9 @@ import (
 )
 
 func gesture(button, action string) Frame {
-	return Frame{V: 2, Type: "button", Button: button, Action: action}
+	return Frame{V: 3, Type: "button", Button: button, Action: action}
 }
-func turn(delta int) Frame { return Frame{V: 2, Type: "encoder", Delta: &delta} }
+func turn(delta int) Frame { return Frame{V: 3, Type: "encoder", Delta: &delta} }
 
 func TestModeCycleOfflineAndHostOwned(t *testing.T) {
 	ctx := context.Background()
@@ -19,7 +19,7 @@ func TestModeCycleOfflineAndHostOwned(t *testing.T) {
 	if s.Mode != "workspace" || s.FocusAxis != "horizontal" || s.WidthMode != "fine" {
 		t.Fatal(s)
 	}
-	for _, want := range []string{"focus", "width", "workspace", "focus"} {
+	for _, want := range []string{"focus", "width", "float", "workspace", "focus"} {
 		if err := c.Handle(ctx, gesture("user", "click")); err != nil {
 			t.Fatal(err)
 		}
@@ -40,7 +40,7 @@ func TestModeCycleOfflineAndHostOwned(t *testing.T) {
 		t.Fatal(s)
 	}
 	// Firmware readback is telemetry, never a request to change host modes.
-	f, err := decodeFrame([]byte(`{"v":2,"type":"status","workspace":0,"connected":false,"rx":3,"mode":"width","focus_axis":"horizontal","width_mode":"preset"}`))
+	f, err := decodeFrame([]byte(`{"v":3,"type":"status","workspace":0,"connected":false,"rx":3,"mode":"width","focus_axis":"horizontal","width_mode":"preset","float_action":"move_x","window_floating":false,"window_ready":false,"window_x":0,"window_y":0,"window_width":0,"window_height":0}`))
 	if err != nil {
 		t.Fatal(err)
 	}

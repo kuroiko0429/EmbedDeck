@@ -5,6 +5,8 @@
 #include <cstdio>
 #include <cstring>
 
+constexpr int kProtocolVersion = 3;
+
 // NDJSON: bounded frames and discard-until-newline overflow recovery.
 template <size_t Capacity> class LineBuffer {
 public:
@@ -36,9 +38,12 @@ struct HostState {
     char mode[12] = "workspace";
     char focusAxis[12] = "horizontal";
     char widthMode[8] = "fine";
+    char floatAction[12] = "move_x";
     char layout[32]{};
     char app[25]{};
     int windowWidth = 0, widthPercent = 0;
+    int windowX = 0, windowY = 0, windowHeight = 0;
+    bool windowFloating = false, windowReady = false;
     bool connected = false, received = false;
     uint32_t lastSeen = 0;
     int workspaces[32]{};
@@ -52,9 +57,9 @@ struct HostState {
 };
 
 inline bool applyState(const char* line, HostState& state, uint32_t now) {
-    StaticJsonDocument<2048> doc;
+    StaticJsonDocument<3072> doc;
     if (deserializeJson(doc, line, DeserializationOption::NestingLimit(4))) return false;
-    if (!doc["v"].is<int>() || doc["v"].as<int>() != 2 ||
+    if (!doc["v"].is<int>() || doc["v"].as<int>() != kProtocolVersion ||
         !doc["type"].is<const char*>() || strcmp(doc["type"], "state") != 0 ||
         !doc["workspace"].is<int>() || !doc["connected"].is<bool>() ||
         !doc["name"].is<const char*>() || !doc["backend"].is<const char*>() ||
@@ -62,12 +67,23 @@ inline bool applyState(const char* line, HostState& state, uint32_t now) {
     if (!doc["mode"].is<const char*>() || !doc["focus_axis"].is<const char*>() ||
         !doc["width_mode"].is<const char*>() || !doc["layout"].is<const char*>() ||
         !doc["app"].is<const char*>() || !doc["window_width"].is<int>() || !doc["width_percent"].is<int>()) return false;
+    if (!doc["float_action"].is<const char*>() || !doc["window_floating"].is<bool>() ||
+        !doc["window_ready"].is<bool>() || !doc["window_x"].is<int>() ||
+        !doc["window_y"].is<int>() || !doc["window_height"].is<int>()) return false;
     const char* mode = doc["mode"], *axis = doc["focus_axis"], *widthMode = doc["width_mode"];
-    if (strcmp(mode, "workspace") && strcmp(mode, "focus") && strcmp(mode, "width")) return false;
+    const char* floatAction = doc["float_action"];
+    if (strcmp(mode, "workspace") && strcmp(mode, "focus") && strcmp(mode, "width") && strcmp(mode, "float")) return false;
     if (strcmp(axis, "horizontal") && strcmp(axis, "vertical")) return false;
     if (strcmp(widthMode, "fine") && strcmp(widthMode, "preset")) return false;
+    if (strcmp(floatAction, "move_x") && strcmp(floatAction, "move_y") &&
+        strcmp(floatAction, "resize_w") && strcmp(floatAction, "resize_h")) return false;
+    if (doc["window_x"].as<int>() < -100000 || doc["window_x"].as<int>() > 100000 ||
+        doc["window_y"].as<int>() < -100000 || doc["window_y"].as<int>() > 100000 ||
+        doc["window_height"].as<int>() < 0 || doc["window_height"].as<int>() > 100000) return false;
     if (doc["window_width"].as<int>() < 0 || doc["window_width"].as<int>() > 100000 ||
         doc["width_percent"].as<int>() < 0 || doc["width_percent"].as<int>() > 100) return false;
+    if (doc["window_ready"].as<bool>() &&
+        (doc["window_width"].as<int>() == 0 || doc["window_height"].as<int>() == 0)) return false;
     if (doc["workspace"].as<int>() < 0 || doc["workspace"].as<int>() > 10000 ||
         (doc["connected"].as<bool>() && doc["workspace"].as<int>() < 1)) return false;
     JsonArray occupied = doc["workspaces"].as<JsonArray>();
@@ -81,9 +97,13 @@ inline bool applyState(const char* line, HostState& state, uint32_t now) {
     snprintf(next.mode, sizeof(next.mode), "%s", mode);
     snprintf(next.focusAxis, sizeof(next.focusAxis), "%s", axis);
     snprintf(next.widthMode, sizeof(next.widthMode), "%s", widthMode);
+    snprintf(next.floatAction, sizeof(next.floatAction), "%s", floatAction);
     snprintf(next.layout, sizeof(next.layout), "%s", doc["layout"].as<const char*>());
     snprintf(next.app, sizeof(next.app), "%s", doc["app"].as<const char*>());
     next.windowWidth = doc["window_width"].as<int>(); next.widthPercent = doc["width_percent"].as<int>();
+    next.windowX = doc["window_x"].as<int>(); next.windowY = doc["window_y"].as<int>();
+    next.windowHeight = doc["window_height"].as<int>();
+    next.windowFloating = doc["window_floating"].as<bool>(); next.windowReady = doc["window_ready"].as<bool>();
     snprintf(next.name, sizeof(next.name), "%s", doc["name"].as<const char*>());
     snprintf(next.error, sizeof(next.error), "%s", doc["error"] | "");
     for (JsonVariant id : occupied) next.workspaces[next.count++] = id.as<int>();

@@ -7,12 +7,14 @@
 #include "usb_protocol.h"
 #include "ui_layout.h"
 #include "ring_feedback.h"
+#include "float_ui.h"
 
 namespace {
 constexpr int kPower = 15, kEncoderA = 4, kEncoderB = 5;
 constexpr int kEncoderKey = 0, kUserKey = 6;
 constexpr uint16_t kBg = 0x2945, kPanel = 0x39c7, kFg = 0xef5b;
 constexpr uint16_t kMuted = 0xa514, kGreen = 0xb5a8, kYellow = 0xf60c, kBlue = 0x8cce, kRed = 0xf2a9;
+constexpr uint16_t kMagenta = ((211 >> 3) << 11) | ((134 >> 2) << 5) | (155 >> 3);
 TFT_eSPI display;
 TFT_eSprite ui(&display);
 RotaryEncoder encoder(kEncoderA, kEncoderB, RotaryEncoder::LatchMode::TWO03);
@@ -46,28 +48,32 @@ template <size_t Size> void send(const StaticJsonDocument<Size>& doc) {
 
 void hello() {
     StaticJsonDocument<128> doc;
-    doc["v"] = 2; doc["type"] = "hello"; doc["firmware"] = "0.3.1";
+    doc["v"] = kProtocolVersion; doc["type"] = "hello"; doc["firmware"] = "0.4.0";
     send(doc);
 }
 
 void status() {
-    StaticJsonDocument<384> doc;
-    doc["v"] = 2; doc["type"] = "status";
+    StaticJsonDocument<512> doc;
+    doc["v"] = kProtocolVersion; doc["type"] = "status";
     doc["workspace"] = host.workspace;
     doc["connected"] = host.online(millis()); doc["rx"] = rx;
     doc["mode"] = host.mode; doc["focus_axis"] = host.focusAxis; doc["width_mode"] = host.widthMode;
+    doc["float_action"] = host.floatAction;
+    doc["window_floating"] = host.windowFloating; doc["window_ready"] = host.windowReady;
+    doc["window_x"] = host.windowX; doc["window_y"] = host.windowY;
+    doc["window_width"] = host.windowWidth; doc["window_height"] = host.windowHeight;
     send(doc);
 }
 
 void sendEncoder(int delta) {
     StaticJsonDocument<128> doc;
-    doc["v"] = 2; doc["type"] = "encoder"; doc["seq"] = ++seq; doc["delta"] = delta;
+    doc["v"] = kProtocolVersion; doc["type"] = "encoder"; doc["seq"] = ++seq; doc["delta"] = delta;
     send(doc);
 }
 
 void sendButton(const char* key, ButtonGesture::Event event) {
     StaticJsonDocument<192> doc;
-    doc["v"] = 2; doc["type"] = "button"; doc["seq"] = ++seq;
+    doc["v"] = kProtocolVersion; doc["type"] = "button"; doc["seq"] = ++seq;
     doc["button"] = key; doc["action"] = event == ButtonGesture::Hold ? "hold" : "click";
     send(doc);
 }
@@ -80,8 +86,10 @@ void label(const char* text, int x, int y, uint16_t color = kFg, int size = 1) {
 void updateRing(uint32_t now) {
     using RingFeedback::Mode;
     const bool width = strcmp(host.mode, "width") == 0;
-    const Mode mode = width ? Mode::Width : (strcmp(host.mode, "focus") == 0 ? Mode::Focus : Mode::Workspace);
-    const bool available = host.online(now) && (!width || (host.windowWidth > 0 && !strcmp(host.layout, "hyprscrolling")));
+    const bool floating = strcmp(host.mode, "float") == 0;
+    const Mode mode = floating ? Mode::Floating : (width ? Mode::Width : (strcmp(host.mode, "focus") == 0 ? Mode::Focus : Mode::Workspace));
+    const bool available = host.online(now) && (!width || (host.windowWidth > 0 && !strcmp(host.layout, "hyprscrolling"))) &&
+        (!floating || (host.windowReady && host.windowFloating));
     const auto frame = ring.render(mode, host.widthPercent, available, now);
     if (ledFrameValid && frame == lastLedFrame) return;
     for (int i = 0; i < RingFeedback::kCount; ++i) {
@@ -95,30 +103,34 @@ void render() {
     if (!spriteReady) return;
     const bool online = host.online(millis()), linked = host.linkAlive(millis());
     const bool focus = strcmp(host.mode, "focus") == 0, width = strcmp(host.mode, "width") == 0;
+    const bool floating = strcmp(host.mode, "float") == 0;
     const bool vertical = strcmp(host.focusAxis, "vertical") == 0, preset = strcmp(host.widthMode, "preset") == 0;
-    const uint16_t accent = online ? (focus ? kBlue : (width ? kYellow : kGreen)) : kMuted;
+    const uint16_t accent = online ? (floating ? kMagenta : (focus ? kBlue : (width ? kYellow : kGreen))) : kMuted;
     ui.fillSprite(kBg);
     label("EMBEDDECK", 10, 10, kFg, 2);
     char workspace[12]; snprintf(workspace, sizeof(workspace), "WS%d", online ? host.workspace : 0);
     label(workspace, 126, 15, kMuted);
-    const char* modes[] = {"WS", "FOCUS", "WIDTH"};
-    const char* ids[] = {"workspace", "focus", "width"};
-    for (int i = 0; i < 3; ++i) {
+    const char* modes[] = {"WS", "FOCUS", "WIDTH", "FLOAT"};
+    const char* ids[] = {"workspace", "focus", "width", "float"};
+    for (int i = 0; i < 4; ++i) {
         const bool selected = strcmp(ids[i], host.mode) == 0;
-        ui.fillRoundRect(10 + i * 50, 33, 46, 20, 4, selected ? accent : kPanel);
+        const auto tab = WorkspaceUI::modeTab(i);
+        ui.fillRoundRect(tab.x, tab.y, tab.w, tab.h, 4, selected ? accent : kPanel);
         ui.setTextSize(1); ui.setTextDatum(MC_DATUM); ui.setTextColor(selected ? kBg : kMuted);
-        ui.drawString(modes[i], 33 + i * 50, 43, 1);
+        ui.drawString(modes[i], tab.x + tab.w / 2, tab.y + tab.h / 2, 1);
     }
     ui.fillRoundRect(10, 61, 150, 99, 8, kPanel);
-    label(focus ? (vertical ? "FOCUS / VERTICAL" : "FOCUS / HORIZONTAL") :
-          (width ? (preset ? "WIDTH / PRESETS" : "WIDTH / 5% STEP") : "WORKSPACE"), 18, 70, accent);
+    label(floating ? FloatUI::actionLabel(host.floatAction) : (focus ? (vertical ? "FOCUS / VERTICAL" : "FOCUS / HORIZONTAL") :
+          (width ? (preset ? "WIDTH / PRESETS" : "WIDTH / 5% STEP") : "WORKSPACE")), 18, 70, accent);
     char value[16];
     if (!online) snprintf(value, sizeof(value), "--");
+    else if (floating) FloatUI::formatValue(value, sizeof(value), host.floatAction,
+        host.windowX, host.windowY, host.windowWidth, host.windowHeight, host.windowReady, host.windowFloating);
     else if (focus) snprintf(value, sizeof(value), vertical ? "U/D" : "L/R");
     else if (width && host.windowWidth > 0) snprintf(value, sizeof(value), "~%d%%", host.widthPercent);
     else if (width) snprintf(value, sizeof(value), "--");
     else snprintf(value, sizeof(value), "%02d", host.workspace);
-    const int valueSize = strlen(value) > 3 ? 4 : (strlen(value) > 2 ? 6 : 7);
+    const int valueSize = floating ? FloatUI::valueSize(value) : (strlen(value) > 3 ? 4 : (strlen(value) > 2 ? 6 : 7));
     ui.setTextSize(valueSize); ui.setTextDatum(MC_DATUM); ui.setTextColor(accent);
     ui.drawString(value, 85, 115, 1);
     char detail[25];
@@ -131,12 +143,25 @@ void render() {
     char hint[25];
     if (!linked) snprintf(hint, sizeof(hint), "Start embeddeck daemon");
     else if (host.error[0]) snprintf(hint, sizeof(hint), "%.24s", host.error);
+    else if (floating && !host.windowReady) snprintf(hint, sizeof(hint), "No editable window");
+    else if (floating && !host.windowFloating) snprintf(hint, sizeof(hint), "Hold knob to float");
     else if ((focus || width) && strcmp(host.layout, "hyprscrolling")) snprintf(hint, sizeof(hint), "Needs hyprscrolling");
     else snprintf(hint, sizeof(hint), "%.24s", activity);
     for (char* p = hint; *p; ++p) if ((unsigned char)*p < 32 || (unsigned char)*p > 126) *p = '?';
     label(hint, 12, 169, kMuted);
-    const int first = WorkspaceUI::firstWorkspace(online ? host.workspace : 1);
-    for (int slot = 0; slot < 10; ++slot) {
+    if (floating) {
+        ui.fillRoundRect(10, 184, 150, 54, 4, kPanel);
+        char geometry[32];
+        if (online && host.windowReady) {
+            snprintf(geometry, sizeof(geometry), "X:%d  Y:%d", host.windowX, host.windowY);
+            label(geometry, 17, 191, kFg);
+            snprintf(geometry, sizeof(geometry), "W:%d  H:%d", host.windowWidth, host.windowHeight);
+            label(geometry, 17, 208, kFg);
+            label(host.windowFloating ? "FLOAT / 10 px step" : "TILED / hold to float", 17, 224, accent);
+        } else label("Geometry unavailable", 17, 202, kMuted);
+    } else {
+      const int first = WorkspaceUI::firstWorkspace(online ? host.workspace : 1);
+      for (int slot = 0; slot < 10; ++slot) {
         const int id = first + slot; const auto cell = WorkspaceUI::workspaceCell(slot);
         const bool active = online && host.workspace == id;
         ui.fillRoundRect(cell.x, cell.y, cell.w, cell.h, 4, active ? accent : kPanel);
@@ -145,14 +170,15 @@ void render() {
         char item[12]; snprintf(item, sizeof(item), "%d", id);
         ui.drawString(item, cell.x + cell.w / 2, cell.y + 11, 1);
         if (!active && host.occupied(id) && online) ui.drawFastHLine(cell.x + 8, cell.y + 21, 10, accent);
+      }
     }
     ui.drawFastHLine(10, 249, 150, kPanel);
     label("TURN", 12, 257, accent);
-    label(focus ? (vertical ? "up / down" : "left / right") : (width ? (preset ? "preset width" : "-5% / +5%") : "prev / next"), 53, 257);
+    label(floating ? "adjust 10 px" : (focus ? (vertical ? "up / down" : "left / right") : (width ? (preset ? "preset width" : "-5% / +5%") : "prev / next")), 53, 257);
     label("CLICK", 12, 273, accent);
-    label(focus ? "switch X / Y" : (width ? "fine / preset" : "last workspace"), 53, 273);
+    label(floating ? "X / Y / W / H" : (focus ? "switch X / Y" : (width ? "fine / preset" : "last workspace")), 53, 273);
     label("HOLD", 12, 289, accent);
-    label(focus ? "focus history" : (width ? "fit active" : "workspace 1"), 53, 289);
+    label(floating ? "float / tile" : (focus ? "focus history" : (width ? "fit active" : "workspace 1")), 53, 289);
     label("USER:mode / hold:WS", 12, 311, linked ? kFg : kMuted);
     ui.pushSprite(0, 0);
 }
@@ -165,6 +191,9 @@ void receive() {
             const bool changed = !host.linkAlive(millis()) || next.workspace != host.workspace ||
                 next.connected != host.connected || strcmp(next.error, host.error) ||
                 strcmp(next.mode, host.mode) || strcmp(next.focusAxis, host.focusAxis) || strcmp(next.widthMode, host.widthMode) ||
+                strcmp(next.floatAction, host.floatAction) || next.windowFloating != host.windowFloating ||
+                next.windowReady != host.windowReady || next.windowX != host.windowX || next.windowY != host.windowY ||
+                next.windowHeight != host.windowHeight ||
                 strcmp(next.layout, host.layout) || strcmp(next.app, host.app) || next.windowWidth != host.windowWidth ||
                 next.widthPercent != host.widthPercent || next.count != host.count ||
                 memcmp(next.workspaces, host.workspaces, sizeof(host.workspaces));
@@ -172,7 +201,7 @@ void receive() {
             if (changed) { dirty = true; status(); }
         } else {
             StaticJsonDocument<256> doc;
-            if (!deserializeJson(doc, incoming.data()) && doc["v"] == 2 && doc["type"] == "ack" &&
+            if (!deserializeJson(doc, incoming.data()) && doc["v"] == kProtocolVersion && doc["type"] == "ack" &&
                 doc["ok"].is<bool>() && !doc["ok"].as<bool>()) {
                 snprintf(activity, sizeof(activity), "Host action failed"); dirty = true;
             }
@@ -187,7 +216,7 @@ void setup() {
     pinMode(2, OUTPUT); digitalWrite(2, LOW);
     pinMode(kEncoderKey, INPUT_PULLUP); pinMode(kUserKey, INPUT_PULLUP);
     pinMode(kEncoderA, INPUT_PULLUP); pinMode(kEncoderB, INPUT_PULLUP);
-    // v2 host states can exceed the core's 256-byte default RX queue.
+    // Host states can exceed the core's 256-byte default RX queue.
     // Keep whole NDJSON frames and short event bursts while the LCD redraws.
     Serial.setRxBufferSize(4096); Serial.setTxBufferSize(1024);
     Serial.begin(115200);

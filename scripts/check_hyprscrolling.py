@@ -56,7 +56,9 @@ def wait_for(predicate, timeout=6):
 
 
 @contextlib.contextmanager
-def fixture(preferred=None):
+def fixture(preferred=None, window_lifetime=180, preserve_navigation=False):
+    if not isinstance(window_lifetime, int) or not 1 <= window_lifetime <= 3600:
+        raise ValueError('Fixture window lifetime must be 1..3600 seconds')
     if not shutil.which('kitty'):
         raise RuntimeError('kitty not installed')
     old_ws, old_window = query('activeworkspace'), query('activewindow')
@@ -73,13 +75,15 @@ def fixture(preferred=None):
         dispatch(f'hl.dsp.focus({{ workspace = {workspace} }})')
         for cls in classes:
             processes.append(subprocess.Popen(['kitty', '--class', cls, '--title', 'EmbedDeck temporary test',
-                                               'sh', '-c', 'printf "EmbedDeck temporary test window\\n"; exec sleep 180'],
+                                               'sh', '-c', f'printf "EmbedDeck temporary test window\\n"; exec sleep {window_lifetime}'],
                                               env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL))
             wait_for(lambda: any(c.get('class') == cls for c in query('clients')))
         windows = {c['class']: c for c in query('clients') if c.get('class') in classes}
         assert all(w['workspace']['id'] == workspace for w in windows.values())
         yield workspace, [windows[c]['address'] for c in classes]
     finally:
+        # Human sessions may intentionally leave the fixture workspace.
+        restore_desktop = not preserve_navigation or query('activeworkspace')['id'] == workspace
         for p in processes:
             if p.poll() is None:
                 p.terminate()
@@ -87,10 +91,11 @@ def fixture(preferred=None):
                     p.wait(timeout=3)
                 except subprocess.TimeoutExpired:
                     p.kill(); p.wait(timeout=3)
-        dispatch(f'hl.dsp.focus({{ workspace = {old_ws["id"]} }})')
-        address = old_window.get('address')
-        if address and any(c.get('address') == address for c in query('clients')):
-            dispatch('hl.dsp.focus({ window = ' + json.dumps('address:' + address) + ' })')
+        if restore_desktop:
+            dispatch(f'hl.dsp.focus({{ workspace = {old_ws["id"]} }})')
+            address = old_window.get('address')
+            if address and any(c.get('address') == address for c in query('clients')):
+                dispatch('hl.dsp.focus({ window = ' + json.dumps('address:' + address) + ' })')
         wait_for(lambda: not any(c.get('class') in classes for c in query('clients')))
 
 

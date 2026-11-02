@@ -39,5 +39,13 @@ int main() {
     f = ring.render(Mode::Workspace, 0, false, 0);
     assert(f[0] == kOffline);
     for (int i=1; i<kCount; ++i) assert(f[i] == kOff);
+    ring.advance(1, 500);
+    f = ring.render(Mode::Floating, 0, true, 500);
+    assert(f[ring.head()] == kMagenta);
+    assert(f[(ring.head() + kCount - 1) % kCount] != kOff);
+    f = ring.render(Mode::Floating, 0, true, 500 + kTailMs);
+    for (int i=0; i<kCount; ++i) assert(f[i] == (i == ring.head() ? kMagenta : kOff));
+    f = ring.render(Mode::Floating, 0, false, 700);
+    assert(f[0] == kOffline);
     puts("PASS: ring phase/wrap, direction tail/expiry, mode colors, width bar, offline, integer/time limits");
 }

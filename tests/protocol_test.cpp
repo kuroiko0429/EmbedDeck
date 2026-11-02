@@ -4,16 +4,18 @@
 #include <string>
 #include "usb_protocol.h"
 int main() {
-    const char* valid = R"({"v":2,"type":"state","workspace":2,"name":"2","workspaces":[1,2,4],"backend":"hyprland","connected":true,"error":"","mode":"width","focus_axis":"horizontal","width_mode":"preset","layout":"hyprscrolling","app":"kitty","window_width":946,"width_percent":50})";
+    const char* valid = R"({"v":3,"type":"state","workspace":2,"name":"2","workspaces":[1,2,4],"backend":"hyprland","connected":true,"error":"","mode":"width","focus_axis":"horizontal","width_mode":"preset","layout":"hyprscrolling","app":"kitty","window_width":946,"width_percent":50,"float_action":"move_x","window_floating":false,"window_ready":true,"window_x":-1920,"window_y":40,"window_height":600})";
     HostState state;
     assert(!state.online(0));
     assert(applyState(valid, state, 100));
     assert(state.workspace == 2 && state.occupied(4) && !state.occupied(3));
     assert(strcmp(state.mode, "width") == 0 && strcmp(state.widthMode, "preset") == 0);
     assert(state.windowWidth == 946 && state.widthPercent == 50);
+    assert(state.windowX == -1920 && state.windowY == 40 && state.windowHeight == 600);
+    assert(state.windowReady && !state.windowFloating && !strcmp(state.floatAction, "move_x"));
     assert(strcmp(state.app, "kitty") == 0);
     assert(state.online(3599)); assert(!state.online(3600));
-    std::string bad = valid; bad.replace(bad.find("\"v\":2"), 5, "\"v\":1");
+    std::string bad = valid; bad.replace(bad.find("\"v\":3"), 5, "\"v\":2");
     assert(!applyState(bad.c_str(), state, 200));
     bad = valid; bad.replace(bad.find("\"width\""), 7, "\"arbitrary\"");
     assert(!applyState(bad.c_str(), state, 200));
@@ -22,6 +24,9 @@ int main() {
     bad = valid; bad.replace(bad.find("\"workspace\":2"), 13, "\"workspace\":2147483647");
     assert(!applyState(bad.c_str(), state, 200));
     assert(state.lastSeen == 100 && state.workspace == 2);
+    // A claimed editable window must carry actual nonzero dimensions.
+    bad = valid; bad.replace(bad.find("\"window_height\":600"), 19, "\"window_height\":0");
+    assert(!applyState(bad.c_str(), state, 200));
     assert(!applyState("garbage", state, 200));
     assert(!applyState(R"({"v":2,"type":"state","workspace":3})", state, 200));
     bad = valid; bad.replace(bad.find("\"connected\":true"), 16, "\"connected\":false");
@@ -34,5 +39,5 @@ int main() {
     assert(!line.push('\n'));
     assert(!line.push('O')); assert(!line.push('K')); assert(!line.push('\r'));
     assert(line.push('\n')); assert(std::strcmp(line.data(), "OK") == 0);
-    puts("PASS: v2 mode/axis/width state, reject v1/invalid enum, heartbeat, overflow recovery");
+    puts("PASS: v3 state, geometry consistency, reject v2/invalid enum, heartbeat, overflow recovery");
 }

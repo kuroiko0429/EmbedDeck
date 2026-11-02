@@ -51,7 +51,7 @@ class Device:
 
     def action(self, kind, ok=True, **fields):
         self.seq += 1
-        payload = dict(v=2, type=kind, seq=self.seq, **fields)
+        payload = dict(v=3, type=kind, seq=self.seq, **fields)
         data = json.dumps(payload).encode() + b'\n'
         while data:
             written = os.write(self.master, data)
@@ -85,7 +85,7 @@ def main():
         left, right = windows
         device = Device()
         try:
-            initial = device.state(v=2, mode='workspace', workspace=workspace)
+            initial = device.state(v=3, mode='workspace', workspace=workspace)
             assert initial['layout'] == 'hyprscrolling'
             device.button('user'); device.state(mode='focus')
             focus(left)
