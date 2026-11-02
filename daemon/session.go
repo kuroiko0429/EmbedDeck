@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -61,10 +62,15 @@ func serveSession(ctx context.Context, p io.ReadWriteCloser, c *Controller, even
 		}
 	}()
 	write := func(v any) error {
-		b, e := json.Marshal(v)
-		if e != nil {
+		var buffer bytes.Buffer
+		encoder := json.NewEncoder(&buffer)
+		// NDJSON is not HTML. Avoid expanding each '<', '>' or '&' to six bytes.
+		encoder.SetEscapeHTML(false)
+		if e := encoder.Encode(v); e != nil {
 			return e
 		}
+		b := buffer.Bytes()
+		b = b[:len(b)-1] // Encoder adds LF; payload limit excludes it.
 		if len(b) > 1023 {
 			return errors.New("outbound frame too large")
 		}
@@ -105,13 +111,13 @@ func serveSession(ctx context.Context, p io.ReadWriteCloser, c *Controller, even
 			}
 		case f := <-frames:
 			if f.Type == "status" {
-				log.Printf("device state: workspace=%d connected=%t rx=%d", *f.Workspace, *f.Connected, *f.RX)
+				log.Printf("device state: workspace=%d connected=%t rx=%d mode=%s axis=%s width_mode=%s", *f.Workspace, *f.Connected, *f.RX, f.Mode, f.FocusAxis, f.WidthMode)
 				continue
 			}
 			e := c.Handle(ctx, f)
-			if f.Seq != nil && !(f.Type == "button" && f.Action == "release") {
-				log.Printf("action: seq=%d type=%s button=%s workspace=%d ok=%t error=%v", *f.Seq, f.Type, f.Button, c.State.Workspace, e == nil, e)
-				a := Ack{V: 1, Type: "ack", Seq: *f.Seq, OK: e == nil}
+			if f.Seq != nil {
+				log.Printf("action: seq=%d type=%s button=%s gesture=%s mode=%s axis=%s width_mode=%s workspace=%d window_width=%d ok=%t error=%v", *f.Seq, f.Type, f.Button, f.Action, c.State.Mode, c.State.FocusAxis, c.State.WidthMode, c.State.Workspace, c.State.WindowWidth, e == nil, e)
+				a := Ack{V: 2, Type: "ack", Seq: *f.Seq, OK: e == nil}
 				if e != nil {
 					a.Error = e.Error()
 				}

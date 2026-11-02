@@ -47,7 +47,8 @@ func watchEvents(ctx context.Context, path func(context.Context) (string, error)
 		for scanner.Scan() {
 			name, _, _ := strings.Cut(scanner.Text(), ">>")
 			switch name {
-			case "workspace", "workspacev2", "focusedmon", "focusedmonv2", "createworkspace", "createworkspacev2", "destroyworkspace", "destroyworkspacev2", "renameworkspace", "moveworkspace", "moveworkspacev2":
+			case "workspace", "workspacev2", "focusedmon", "focusedmonv2", "createworkspace", "createworkspacev2", "destroyworkspace", "destroyworkspacev2", "renameworkspace", "moveworkspace", "moveworkspacev2",
+				"activewindow", "activewindowv2", "openwindow", "closewindow", "movewindow", "movewindowv2", "changefloatingmode", "fullscreen", "windowtitle", "windowtitlev2", "monitoradded", "monitorremoved", "configreloaded":
 				select {
 				case events <- struct{}{}:
 				default:

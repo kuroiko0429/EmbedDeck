@@ -1,71 +1,86 @@
-# EmbedDeck USB protocol v1
+# EmbedDeck USB protocol v2 / firmware 0.3.0
 
-Transport: USB CDC (development firmware uses ESP32-S3 USB Serial/JTAG), 115200 baud, UTF-8 NDJSON. Each JSON object ends in LF; CRLF is accepted. Maximum line payload: 1023 bytes, not including LF. Oversized or NUL-containing lines are discarded through the next LF. No plain-text application logging shares this stream; ROM boot text may precede the first `hello` and must be ignored.
+USB CDC, 115200 baud, UTF-8 NDJSON. One JSON object per LF (CRLF accepted), maximum 1023 payload bytes excluding LF. Discard oversized/NUL-containing frames through LF. Ignore ESP-ROM boot text before hello. No plain-text firmware application logging is mixed into this stream.
 
-The physical USB CDC transport is not a keyboard/HID interface. Host-side actions are performed by a daemon. This release implements only a Hyprland backend; Windows/macOS/Android and other desktop backends are not implemented.
+v2 is deliberately incompatible with v1: both firmware and daemon must be updated together. Old frames are rejected instead of silently changing workspace in a new mode. USB is not HID; host actions require the Go daemon. Current backend: Hyprland 0.57 Lua plus hyprscroller-ng's `hyprscrolling` layout.
 
-## Device → host
+## Device -> host
 
-Every 2 seconds and at boot:
-
-```json
-{"v":1,"type":"hello","firmware":"0.2.0"}
-```
-
-Encoder:
+At boot and every 2 seconds:
 
 ```json
-{"v":1,"type":"encoder","seq":1,"delta":1}
+{"v":2,"type":"hello","firmware":"0.3.0"}
 ```
 
-Positive delta requests the next numeric workspace; negative requests the previous. Each event has an integer delta with 1 ≤ abs(delta) ≤ 32. Larger physical movements are split into chunks. No cyclic wrap: host clamps to [1, max-workspace], default 10.
-
-Buttons:
+Encoder event (`1 <= abs(delta) <= 32`, split larger physical deltas):
 
 ```json
-{"v":1,"type":"button","seq":2,"button":"knob","action":"press"}
-{"v":1,"type":"button","seq":3,"button":"knob","action":"release"}
+{"v":2,"type":"encoder","seq":1,"delta":1}
 ```
 
-`button`: `knob` or `user`. `action`: `press` or `release`. Knob press toggles to the previous visited workspace; user press requests workspace 1. Releases perform no action. Sequence numbers identify action acknowledgments; transport is best-effort with no replay/retransmit. Never queue offline physical actions for later playback.
-
-Applied-state readback (on relevant state changes, not every heartbeat):
+Debounced gesture:
 
 ```json
-{"v":1,"type":"status","workspace":2,"connected":true,"rx":1}
+{"v":2,"type":"button","seq":2,"button":"user","action":"click"}
+{"v":2,"type":"button","seq":3,"button":"knob","action":"hold"}
 ```
 
-`rx` counts valid state frames accepted in the current device boot. Status is telemetry, not an action request.
+`button` is `knob` or `user`; `action` is `click` or `hold`. Click fires on release before 600ms; hold fires once at/after 600ms and consumes release, so it never also clicks. Raw press/release events are not emitted in v2. This is best-effort serial transport: no replay/retransmit; sequence numbers correlate ACKs, not a durable delivery queue.
 
-## Host → device
-
-At least once per second and promptly on compositor changes:
+Applied host-state readback on relevant changes:
 
 ```json
-{"v":1,"type":"state","workspace":2,"name":"2","workspaces":[1,2,4],"backend":"hyprland","connected":true,"error":""}
+{"v":2,"type":"status","workspace":2,"connected":true,"rx":1,"mode":"width","focus_axis":"horizontal","width_mode":"fine"}
 ```
 
-`workspaces` lists occupied/existing positive workspace IDs, maximum 32. The display shows a 10-workspace page containing the active workspace, underlines existing workspaces and highlights the active one. `name` has a 63-byte firmware buffer; the current UI displays the numeric ID rather than arbitrary workspace names. The bundled font supports ASCII only.
+`rx` counts valid accepted host states in this boot. Status is telemetry, never an action.
 
-No reachable compositor:
+## Host -> device
+
+On changes and at least every second:
 
 ```json
-{"v":1,"type":"state","workspace":0,"name":"","workspaces":[],"backend":"hyprland","connected":false,"error":"No Hyprland session"}
+{"v":2,"type":"state","workspace":2,"name":"2","workspaces":[1,2],"backend":"hyprland","connected":true,"error":"","mode":"width","focus_axis":"horizontal","width_mode":"fine","layout":"hyprscrolling","app":"kitty","window_width":933,"width_percent":49}
 ```
 
-Action acknowledgment:
+Required enums:
+
+- mode: `workspace`, `focus`, `width`
+- focus_axis: `horizontal`, `vertical`
+- width_mode: `fine`, `preset`
+
+All fields in the example are required by firmware except `error` (empty default). The active workspace is in [1,10000] (0 only when disconnected); larger IDs are unsupported and rejected before rendering. `workspaces` has <=32 integer IDs. `layout` comes from the active workspace's tiledLayout. `app` is an ASCII app-class label (24-byte display buffer); `name` has a 63-byte buffer. window_width is current focused-window logical pixel width (0 when none). width_percent is an approximate percentage of monitor usable logical width, clamped to [0,100], not an exact plugin column-width query: gaps/borders and fullscreen-single-column can change apparent size. The UI marks it with `~`.
+
+If the backend is unavailable, send connected=false, workspace=0, name="", workspaces=[], empty app/layout and zero widths, but preserve the controller's selected mode/axis/width_mode.
 
 ```json
-{"v":1,"type":"ack","seq":1,"ok":true,"error":""}
+{"v":2,"type":"ack","seq":1,"ok":true,"error":""}
 ```
 
-A negative acknowledgment displays a generic action failure. Host logs contain details. The device displays OFFLINE when state is absent/stale for 3500 ms or `connected` is false, and suppresses action emission until synchronized again. The hello heartbeat continues while offline.
+ACK false shows a generic firmware warning; daemon logs contain action results. Desktop operations must query compositor state afterward rather than predict geometry. Some operations intentionally have no visible effect (one-window focus, width clamp, single-column full-width); successful dispatcher acceptance is not proof of a changed window.
 
-## Security boundary
+## Mode/button contract
 
-The device sends enum actions and integer deltas, never arbitrary IPC/shell commands. The host must validate protocol version, types and bounds, construct a fixed dispatcher with a numeric workspace target, use no shell interpolation and keep compositor requests short-lived with deadlines. Do not expose serial-to-IPC forwarding as a network service. State is always refreshed from compositor readback, not merely assumed from a requested target.
+The host owns mode, horizontal/vertical axis and fine/preset selection. Defaults: workspace/horizontal/fine. They survive serial reconnect within the same daemon process, but not daemon restart.
 
-## Real-device tests
+| Input | workspace | focus | width |
+| --- | --- | --- | --- |
+| Turn + / - | Next / previous numeric workspace | Right / left or down / up | + / - 5 percentage points or preset |
+| Knob click | Previous visited workspace | Toggle horizontal / vertical | Toggle fine / preset |
+| Knob hold | Workspace1 | Focus history back | Fit active column to screen |
+| User click | Next mode | Next mode | Next mode |
+| User hold | Workspace mode | Workspace mode | Workspace mode |
 
-- `scripts/usb_roundtrip.py`: read actual Hyprland state; wait for firmware hello; send an oversized frame, an incompatible-version frame, then actual state; require a firmware `status` confirming workspace and a positive RX count. Run only with daemon stopped.
-- Physical test with daemon: rotate both directions, press knob/user, change workspace from keyboard; compare live compositor state, host logs and the LCD. Do not claim the physical path from fake-serial tests alone.
+Mode cycle: workspace -> focus -> width -> workspace. Numeric workspace navigation clamps to [1,max-workspace], default10. User hold changes mode only, never moves the desktop. Mode/axis selection can operate while the daemon link is alive but the compositor is unavailable.
+
+Plugin actions require active layout `hyprscrolling` and a mapped, nonfloating, nonfullscreen focused window. Workspace actions remain usable without the plugin. Messages are fixed templates: `focus l/r/u/d`, `focusback`, `colresize +/-0.05` (scaled by bounded delta), `colresize +/-conf`, `fit active`; never pass serial-provided Lua/shell strings to IPC.
+
+Firmware marks the host stale after 3500ms without a valid state. It sends no actions while stale and never replays offline input. With a live host but unavailable compositor, mode gestures may still be sent; rotation is suppressed.
+
+## Tests
+
+- `bash scripts/test_firmware.sh`: debounce, gesture timing/rollover, v2 state schema, frame recovery, portrait layout.
+- `go test -race ./...` and `go vet ./...` in daemon/: protocol, mode machine, backend guards and IPC.
+- `scripts/usb_roundtrip.py` (daemon stopped): actual Hyprland snapshot -> USB -> actual firmware state readback, after oversized/incompatible test inputs.
+- `scripts/check_hyprscrolling.py`: real plugin actions on two owned temporary kitty windows in an unused workspace, then close them and restore prior workspace/focus. No existing windows are moved/resized.
+- Physical tests must separately verify real encoder/gestures -> Go -> IPC and LCD feedback. Fake serial tests alone do not prove that path.

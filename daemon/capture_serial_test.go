@@ -49,7 +49,7 @@ class CaptureSerialTest(unittest.TestCase):
 
             def readline(self):
                 testcase.assertTrue(self.is_open)
-                return b'{"v":1,"type":"hello","firmware":"test"}\n'
+                return b'{"v":2,"type":"hello","firmware":"test"}\n'
 
         with tempfile.TemporaryDirectory() as tmp:
             output = Path(tmp) / 'capture.log'
@@ -60,7 +60,7 @@ class CaptureSerialTest(unittest.TestCase):
                  patch('time.monotonic', side_effect=[0, 0, 2]), \
                  contextlib.redirect_stdout(io.StringIO()) as stdout:
                 runpy.run_path('../scripts/capture_serial.py', run_name='__main__')
-            self.assertEqual(output.read_text(), '{"v":1,"type":"hello","firmware":"test"}\n')
+            self.assertEqual(output.read_text(), '{"v":2,"type":"hello","firmware":"test"}\n')
             self.assertEqual(stdout.getvalue(), output.read_text())
         self.assertEqual(events, [
             ('construct', None, 115200, 1),

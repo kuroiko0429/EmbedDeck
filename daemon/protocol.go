@@ -23,6 +23,9 @@ type Frame struct {
 	Workspace *int    `json:"workspace,omitempty"`
 	Connected *bool   `json:"connected,omitempty"`
 	RX        *uint32 `json:"rx,omitempty"`
+	Mode      string  `json:"mode,omitempty"`
+	FocusAxis string  `json:"focus_axis,omitempty"`
+	WidthMode string  `json:"width_mode,omitempty"`
 }
 
 func decodeFrame(b []byte) (Frame, error) {
@@ -60,7 +63,7 @@ func decodeFrame(b []byte) (Frame, error) {
 	}
 	d = json.NewDecoder(bytes.NewReader(b))
 	d.DisallowUnknownFields()
-	if d.Decode(&f) != nil || f.V != 1 {
+	if d.Decode(&f) != nil || f.V != 2 {
 		return f, errFrame
 	}
 	allowed := map[string]bool{"v": true, "type": true}
@@ -69,6 +72,12 @@ func decodeFrame(b []byte) (Frame, error) {
 		allowed["workspace"] = true
 		allowed["connected"] = true
 		allowed["rx"] = true
+		allowed["mode"] = true
+		allowed["focus_axis"] = true
+		allowed["width_mode"] = true
+		if (f.Mode != "workspace" && f.Mode != "focus" && f.Mode != "width") || (f.FocusAxis != "horizontal" && f.FocusAxis != "vertical") || (f.WidthMode != "fine" && f.WidthMode != "preset") {
+			return f, errFrame
+		}
 		if f.Workspace == nil || f.Connected == nil || f.RX == nil || *f.Workspace < 0 || (*f.Connected && *f.Workspace < 1) {
 			return f, errFrame
 		}
@@ -87,7 +96,7 @@ func decodeFrame(b []byte) (Frame, error) {
 		allowed["seq"] = true
 		allowed["button"] = true
 		allowed["action"] = true
-		if f.Seq == nil || (f.Button != "knob" && f.Button != "user") || (f.Action != "press" && f.Action != "release") {
+		if f.Seq == nil || (f.Button != "knob" && f.Button != "user") || (f.Action != "click" && f.Action != "hold") {
 			return f, errFrame
 		}
 	default:

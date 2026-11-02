@@ -16,9 +16,9 @@ func TestHyprlandExactIPC(t *testing.T) {
 		t.Fatal(e)
 	}
 	defer l.Close()
-	commands := make(chan string, 3)
+	commands := make(chan string, 5)
 	go func() {
-		for _, reply := range []string{`{"id":2,"name":"two"}`, `[{"id":2},{"id":1},{"id":-99},{"id":2}]`, `ok`} {
+		for _, reply := range []string{`{"id":2,"name":"two"}`, `[{"id":2},{"id":1},{"id":-99},{"id":2}]`, `{}`, `ok`} {
 			c, e := l.Accept()
 			if e != nil {
 				return
@@ -39,7 +39,7 @@ func TestHyprlandExactIPC(t *testing.T) {
 	if e = h.Focus(context.Background(), 3); e != nil {
 		t.Fatal(e)
 	}
-	for _, want := range []string{"j/activeworkspace", "j/workspaces", "dispatch hl.dsp.focus({ workspace = 3 })"} {
+	for _, want := range []string{"j/activeworkspace", "j/workspaces", "j/activewindow", "dispatch hl.dsp.focus({ workspace = 3 })"} {
 		select {
 		case got := <-commands:
 			if got != want {

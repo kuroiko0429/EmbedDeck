@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -32,9 +34,17 @@ func TestProbeNeverOpensSerial(t *testing.T) {
 			n, _ := c.Read(b)
 			switch string(b[:n]) {
 			case "j/activeworkspace":
-				io.WriteString(c, `{"id":2,"name":"two"}`)
+				fmt.Fprintf(c, `{"id":2,"name":%q,"tiledLayout":%q}`, strings.Repeat("<", 63), strings.Repeat("<", 63))
 			case "j/workspaces":
-				io.WriteString(c, `[{"id":1},{"id":2}]`)
+				var list []map[string]int
+				for i := 0; i < 31; i++ {
+					list = append(list, map[string]int{"id": 2147483647 - i})
+				}
+				json.NewEncoder(c).Encode(list)
+			case "j/activewindow":
+				fmt.Fprintf(c, `{"address":"0xabc","mapped":true,"floating":false,"fullscreen":0,"class":%q,"size":[1000,700],"monitor":1,"workspace":{"id":2}}`, strings.Repeat("<", 24))
+			case "j/monitors":
+				io.WriteString(c, `[{"id":1,"width":1920,"height":1080,"scale":1}]`)
 			}
 			c.Close()
 		}
@@ -43,8 +53,11 @@ func TestProbeNeverOpensSerial(t *testing.T) {
 	if e := run(context.Background(), []string{"--probe", "--port", "/does/not/exist"}, &out); e != nil {
 		t.Fatal(e)
 	}
+	if out.Len()-1 > maxFrame {
+		t.Fatalf("probe frame too large: %d", out.Len()-1)
+	}
 	var s State
-	if e = json.Unmarshal(out.Bytes(), &s); e != nil || !s.Connected || s.Workspace != 2 || s.V != 1 || s.Backend != "hyprland" {
+	if e = json.Unmarshal(out.Bytes(), &s); e != nil || !s.Connected || s.Workspace != 2 || s.V != 2 || s.Backend != "hyprland" {
 		t.Fatal(out.String(), e)
 	}
 	for _, args := range [][]string{{"--max-workspace", "0"}, {"--max-workspace", "10001"}, {"extra"}} {

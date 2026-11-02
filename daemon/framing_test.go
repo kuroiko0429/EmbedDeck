@@ -12,11 +12,11 @@ func TestFramingByteLimitAndRecovery(t *testing.T) {
 		for _, ending := range []string{"\n", "\r\n"} {
 			for _, size := range []int{1023, 1024} {
 				t.Run(fmt.Sprintf("buffer=%d/ending=%q/bytes=%d", bufferSize, ending, size), func(t *testing.T) {
-					base := `{"v":1,"type":"hello","firmware":"x"}`
+					base := `{"v":2,"type":"hello","firmware":"x"}`
 					// CR, if present, is part of the 1023-byte payload budget;
 					// only LF is excluded by the protocol.
 					payload := base + strings.Repeat(" ", size-len(base)-(len(ending)-1))
-					next := `{"v":1,"type":"encoder","seq":2,"delta":1}`
+					next := `{"v":2,"type":"encoder","seq":2,"delta":1}`
 					r := bufio.NewReaderSize(strings.NewReader(payload+ending+next+"\n"), bufferSize)
 					frame, err := readFrame(r)
 					if size == 1023 {
@@ -43,12 +43,12 @@ func TestFramingByteLimitAndRecovery(t *testing.T) {
 }
 
 func TestFramingRecovery(t *testing.T) {
-	r := bufio.NewReaderSize(strings.NewReader(strings.Repeat("x", 4096)+"\n{\"v\":1}\n"), 128)
+	r := bufio.NewReaderSize(strings.NewReader(strings.Repeat("x", 4096)+"\n{\"v\":2}\n"), 128)
 	if _, err := readFrame(r); err != errFrame {
 		t.Fatalf("oversize: %v", err)
 	}
 	b, err := readFrame(r)
-	if err != nil || string(b) != `{"v":1}` {
+	if err != nil || string(b) != `{"v":2}` {
 		t.Fatalf("recovery %q %v", b, err)
 	}
 }

@@ -11,3 +11,5 @@ g++ -std=c++17 -Wall -Wextra -Werror -Iinclude \
 "$work/protocol-test"
 g++ -std=c++17 -Wall -Wextra -Werror -Iinclude tests/ui_layout_test.cpp -o "$work/ui-test"
 "$work/ui-test"
+g++ -std=c++17 -Wall -Wextra -Werror -Iinclude tests/gesture_test.cpp -o "$work/gesture-test"
+"$work/gesture-test"

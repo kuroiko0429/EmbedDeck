@@ -22,9 +22,17 @@ def request(command):
     return json.loads(result)
 
 active = request('j/activeworkspace')
-state = dict(v=1, type='state', workspace=active['id'], name=active['name'],
-             workspaces=[x['id'] for x in request('j/workspaces') if x['id'] > 0],
-             backend='hyprland', connected=True, error='')
+window = request('j/activewindow')
+monitors = request('j/monitors')
+monitor = next((m for m in monitors if m['id'] == window.get('monitor')), None)
+window_width = max(0, window.get('size', [0])[0])
+usable = (monitor['width'] / monitor.get('scale', 1) - monitor['reserved'][0] - monitor['reserved'][2]) if monitor else 0
+percent = min(100, max(0, round(window_width / usable * 100))) if usable > 0 else 0
+state = dict(v=2, type='state', workspace=active['id'], name=active['name'],
+             workspaces=[x['id'] for x in request('j/workspaces') if x['id'] > 0][:32],
+             backend='hyprland', connected=True, error='', mode='workspace',
+             focus_axis='horizontal', width_mode='fine', layout=active.get('tiledLayout', ''),
+             app=window.get('class', '')[:24], window_width=window_width, width_percent=percent)
 port = '/dev/serial/by-id/usb-Espressif_USB_JTAG_serial_debug_unit_30:ED:A0:34:56:4C-if00'
 frames = []
 with serial.Serial(port=None, baudrate=115200, timeout=.2) as device:
@@ -40,7 +48,7 @@ with serial.Serial(port=None, baudrate=115200, timeout=.2) as device:
             frame = json.loads(line)
         except (ValueError, UnicodeError):
             continue
-        if frame.get('type') == 'hello' and frame.get('firmware') == '0.2.0':
+        if frame.get('v') == 2 and frame.get('type') == 'hello' and frame.get('firmware') == '0.3.0':
             print('Firmware hello:', frame)
             break
     else:
@@ -63,8 +71,10 @@ with serial.Serial(port=None, baudrate=115200, timeout=.2) as device:
             continue
         frames.append(frame)
         print(json.dumps(frame), flush=True)
-        if (frame.get('type') == 'status' and frame.get('workspace') == active['id']
-                and frame.get('connected') is True and frame.get('rx', 0) > 0):
+        if (frame.get('v') == 2 and frame.get('type') == 'status' and frame.get('workspace') == active['id']
+                and frame.get('connected') is True and frame.get('rx', 0) > 0
+                and frame.get('mode') == state['mode'] and frame.get('focus_axis') == state['focus_axis']
+                and frame.get('width_mode') == state['width_mode']):
             break
     else:
         raise SystemExit('FAIL: no actual firmware state readback over USB')

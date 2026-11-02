@@ -14,7 +14,7 @@ func TestStateWireBounds(t *testing.T) {
 	if len(name) > 63 || !utf8.ValidString(name) {
 		t.Fatalf("name bytes %d", len(name))
 	}
-	s := State{V: 1, Type: "state", Backend: "hyprland", Connected: true, Workspace: 2147483647, Name: safeName(strings.Repeat("<", 100)), Workspaces: []int{}}
+	s := State{V: 2, Type: "state", Backend: "hyprland", Connected: true, Workspace: 2147483647, Name: safeName(strings.Repeat("<", 100)), Workspaces: []int{}}
 	for i := 0; i < 32; i++ {
 		s.Workspaces = append(s.Workspaces, 2147483647-i)
 	}

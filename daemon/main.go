@@ -42,7 +42,9 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 	c := &Controller{Backend: backend, Max: *max}
 	if *probe {
 		s := c.Refresh(ctx)
-		if e := json.NewEncoder(out).Encode(s); e != nil {
+		encoder := json.NewEncoder(out)
+		encoder.SetEscapeHTML(false)
+		if e := encoder.Encode(s); e != nil {
 			return e
 		}
 		if !s.Connected {
@@ -62,7 +64,7 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 		}, events)
 	}()
 	for ctx.Err() == nil {
-		p, e := serial.Open(*port, serialMode())
+		p, e := openSerialPort(*port)
 		if e != nil {
 			log.Printf("serial unavailable: %v", e)
 		} else {

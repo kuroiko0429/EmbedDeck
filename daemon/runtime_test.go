@@ -86,3 +86,45 @@ func TestWatchEventsReconnectAndCancel(t *testing.T) {
 		t.Fatal("watcher did not stop")
 	}
 }
+
+func TestWindowEventsResync(t *testing.T) {
+	for _, name := range []string{"activewindow", "activewindowv2", "openwindow", "closewindow", "movewindow", "movewindowv2", "changefloatingmode", "fullscreen", "windowtitle", "windowtitlev2", "monitoradded", "monitorremoved", "configreloaded"} {
+		t.Run(name, func(t *testing.T) {
+			dir, err := os.MkdirTemp("", "ed-event-")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer os.RemoveAll(dir)
+			p := filepath.Join(dir, "s")
+			l, err := net.Listen("unix", p)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer l.Close()
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			events := make(chan struct{}, 1)
+			done := make(chan struct{})
+			go func() { watchEvents(ctx, func(context.Context) (string, error) { return p, nil }, events); close(done) }()
+			go func() {
+				conn, err := l.Accept()
+				if err != nil {
+					return
+				}
+				io.WriteString(conn, name+">>data\n")
+				conn.Close()
+			}()
+			select {
+			case <-events:
+			case <-time.After(150 * time.Millisecond):
+				t.Error("missing event", name)
+			}
+			cancel()
+			select {
+			case <-done:
+			case <-time.After(time.Second):
+				t.Fatal("watcher blocked")
+			}
+		})
+	}
+}
