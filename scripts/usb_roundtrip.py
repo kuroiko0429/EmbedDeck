@@ -48,7 +48,7 @@ with serial.Serial(port=None, baudrate=115200, timeout=.2) as device:
             frame = json.loads(line)
         except (ValueError, UnicodeError):
             continue
-        if frame.get('v') == 2 and frame.get('type') == 'hello' and frame.get('firmware') == '0.3.0':
+        if frame.get('v') == 2 and frame.get('type') == 'hello' and frame.get('firmware') == '0.3.1':
             print('Firmware hello:', frame)
             break
     else:

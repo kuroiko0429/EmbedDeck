@@ -1,10 +1,12 @@
 #include <Arduino.h>
 #include <TFT_eSPI.h>
 #include <RotaryEncoder.h>
+#include <Adafruit_NeoPixel.h>
 #include "debounced_button.h"
 #include "button_gesture.h"
 #include "usb_protocol.h"
 #include "ui_layout.h"
+#include "ring_feedback.h"
 
 namespace {
 constexpr int kPower = 15, kEncoderA = 4, kEncoderB = 5;
@@ -16,6 +18,12 @@ TFT_eSprite ui(&display);
 RotaryEncoder encoder(kEncoderA, kEncoderB, RotaryEncoder::LatchMode::TWO03);
 DebouncedButton encoderButton, userButton;
 ButtonGesture knobGesture, userGesture;
+// Vendor CC1101 board: eight addressable pixels on GPIO14, shared power GPIO15.
+constexpr int kLedPin = 14, kLedBrightness = 24, kLedDirection = -1;
+Adafruit_NeoPixel strip(RingFeedback::kCount, kLedPin, NEO_GRB + NEO_KHZ800);
+RingFeedback::Ring ring;
+RingFeedback::Frame lastLedFrame{};
+bool ledFrameValid = false;
 portMUX_TYPE encoderMux = portMUX_INITIALIZER_UNLOCKED;
 HostState host;
 LineBuffer<1024> incoming;
@@ -38,7 +46,7 @@ template <size_t Size> void send(const StaticJsonDocument<Size>& doc) {
 
 void hello() {
     StaticJsonDocument<128> doc;
-    doc["v"] = 2; doc["type"] = "hello"; doc["firmware"] = "0.3.0";
+    doc["v"] = 2; doc["type"] = "hello"; doc["firmware"] = "0.3.1";
     send(doc);
 }
 
@@ -67,6 +75,20 @@ void sendButton(const char* key, ButtonGesture::Event event) {
 void label(const char* text, int x, int y, uint16_t color = kFg, int size = 1) {
     ui.setTextDatum(TL_DATUM); ui.setTextColor(color); ui.setTextSize(size);
     ui.drawString(text, x, y, 1);
+}
+
+void updateRing(uint32_t now) {
+    using RingFeedback::Mode;
+    const bool width = strcmp(host.mode, "width") == 0;
+    const Mode mode = width ? Mode::Width : (strcmp(host.mode, "focus") == 0 ? Mode::Focus : Mode::Workspace);
+    const bool available = host.online(now) && (!width || (host.windowWidth > 0 && !strcmp(host.layout, "hyprscrolling")));
+    const auto frame = ring.render(mode, host.widthPercent, available, now);
+    if (ledFrameValid && frame == lastLedFrame) return;
+    for (int i = 0; i < RingFeedback::kCount; ++i) {
+        const auto c = frame[i]; strip.setPixelColor(i, c.r, c.g, c.b);
+    }
+    strip.show();
+    lastLedFrame = frame; ledFrameValid = true;
 }
 
 void render() {
@@ -175,7 +197,8 @@ void setup() {
     pinMode(TFT_BL, OUTPUT); digitalWrite(TFT_BL, HIGH); display.fillScreen(kBg);
     ui.setColorDepth(16); spriteReady = ui.createSprite(WorkspaceUI::kWidth, WorkspaceUI::kHeight) != nullptr;
     if (!spriteReady) { display.setTextColor(kRed, kBg); display.drawString("UI allocation failed", 10, 30, 2); }
-    render(); hello();
+    strip.begin(); strip.setBrightness(kLedBrightness); strip.clear(); strip.show();
+    updateRing(millis()); render(); hello();
 }
 
 void loop() {
@@ -186,6 +209,7 @@ void loop() {
     portENTER_CRITICAL(&encoderMux); const long next = encoder.getPosition(); portEXIT_CRITICAL(&encoderMux);
     if (next != position) {
         long delta = next - position; position = next;
+        ring.advance(int64_t(delta) * kLedDirection, now);
         snprintf(activity, sizeof(activity), delta > 0 ? "Turn +" : "Turn -");
         if (online) while (delta) {
             const int chunk = delta > 32 ? 32 : (delta < -32 ? -32 : int(delta)); sendEncoder(chunk); delta -= chunk;
@@ -202,7 +226,8 @@ void loop() {
         if (linked) sendButton("user", user);
         snprintf(activity, sizeof(activity), user == ButtonGesture::Hold ? "Home mode / workspace" : "Next mode"); dirty = true;
     }
-    static uint32_t lastHello = 0, lastDraw = 0;
+    static uint32_t lastHello = 0, lastDraw = 0, lastLed = 0;
+    if (uint32_t(now - lastLed) >= 25) { updateRing(now); lastLed = now; }
     if (uint32_t(now - lastHello) >= 2000) { hello(); lastHello = now; }
     if (dirty && uint32_t(now - lastDraw) >= 40) { render(); dirty = false; lastDraw = now; }
     delay(1);

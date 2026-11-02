@@ -1,7 +1,7 @@
 # EmbedDeck
 
 LILYGO T-Embed CC1101 (ESP32-S3) を、本体無改造の左手デバイスにするプロジェクト。
-firmware 0.3.0 は USB CDC の NDJSON v2 と Go デーモンで Hyprland / hyprscrolling を操作する。
+firmware 0.3.1 は USB CDC の NDJSON v2 と Go デーモンで Hyprland / hyprscrolling を操作する。
 v1とは互換性がないため、ファームとデーモンを両方更新すること。
 
 ## 操作とUI
@@ -26,6 +26,19 @@ WSの初期範囲は1〜10、端で停止（循環しない）。モード・軸
 
 これは HID キーボードではなくデーモン経由の操作。現在のバックエンドは Hyprland 0.57 の Lua dispatcher のみ。
 他の Linux DE・Windows・macOS・Android 対応、BLE/HID、キー割り当て編集は未実装。
+
+## LEDリング（firmware 0.3.1）
+
+GPIO14の8灯をAdafruit NeoPixel 1.12.3で制御。明るさは24/255に抑える。
+
+- WS: 緑の点が回転量に追従し、短い残像を付ける
+- FOCUS: 同じ回転追従を青で表示
+- WIDTH: ホストから受け取った概算幅を黄色のバーで表示（端のLEDは部分点灯）
+- ホスト未接続／幅情報なし: 弱いアンバー1灯
+
+校正は保留。今回はエンコーダーの1デコードステップで隣のLEDへ進む相対表示で、8ステップで光が一周する。物理的なノブ1周とは一致するとは限らず、絶対角度センサーでもない。
+`kLedDirection=-1`で実機のLED配列と回転方向を合わせている（ユーザー確認済み）。位置は再起動時に初期化される。
+更新上限は25ms間隔、色が変わるときだけ送信する。WS移動等の既存操作・USBプロトコルv2は変更しない。
 
 ## 起動・停止
 
@@ -82,7 +95,7 @@ Hyprland .socket2.sock events / heartbeat resync
 
 - PlatformIO Core 6.2.0（uv tool、Python 3.12）
 - espressif32 6.13.0 / Arduino-ESP32 2.0.17
-- TFT_eSPI 2.5.43 / RotaryEncoder 1.5.3 / ArduinoJson 6.21.5
+- TFT_eSPI 2.5.43 / RotaryEncoder 1.5.3 / ArduinoJson 6.21.5 / Adafruit NeoPixel 1.12.3
 - Go（依存は daemon/go.mod と go.sum に固定）
 - 実機: ESP32-S3 rev 0.2、Flash 16MB、内蔵 PSRAM 8MB（esptool 識別）
 
@@ -119,6 +132,13 @@ TFT_eSPI の TOUCH_CS 未定義警告は非タッチ液晶のため想定内。
 ```
 
 ## 検証結果
+
+0.3.1 LED追加:
+
+- リングモデルの回転・逆回転・整数/時刻周回・残像・幅バーをネイティブテスト（ASan/UBSanも通過）
+- firmware 0.3.1の実機書き込み、USB往復、LED更新中の状態連続受信16/16を確認
+- ユーザー実機確認: 方向反転後、緑/青/黄の色・回転追従・幅メーター・従来操作すべて正常
+- 物理的な1周の角度校正は未実施。相対1ステップ表示として利用
 
 0.3モード機能:
 

@@ -1,4 +1,4 @@
-# EmbedDeck USB protocol v2 / firmware 0.3.0
+# EmbedDeck USB protocol v2 / firmware 0.3.1
 
 USB CDC, 115200 baud, UTF-8 NDJSON. One JSON object per LF (CRLF accepted), maximum 1023 payload bytes excluding LF. Discard oversized/NUL-containing frames through LF. Ignore ESP-ROM boot text before hello. No plain-text firmware application logging is mixed into this stream.
 
@@ -9,7 +9,7 @@ v2 is deliberately incompatible with v1: both firmware and daemon must be update
 At boot and every 2 seconds:
 
 ```json
-{"v":2,"type":"hello","firmware":"0.3.0"}
+{"v":2,"type":"hello","firmware":"0.3.1"}
 ```
 
 Encoder event (`1 <= abs(delta) <= 32`, split larger physical deltas):

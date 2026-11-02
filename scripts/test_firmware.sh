@@ -13,3 +13,5 @@ g++ -std=c++17 -Wall -Wextra -Werror -Iinclude tests/ui_layout_test.cpp -o "$wor
 "$work/ui-test"
 g++ -std=c++17 -Wall -Wextra -Werror -Iinclude tests/gesture_test.cpp -o "$work/gesture-test"
 "$work/gesture-test"
+g++ -std=c++17 -Wall -Wextra -Werror -Iinclude tests/ring_feedback_test.cpp -o "$work/ring-test"
+"$work/ring-test"
