@@ -1,0 +1,2 @@
+# Only this development board; do not alter the laptop's Sierra LTE modem.
+SUBSYSTEM=="tty", ATTRS{idVendor}=="303a", ATTRS{idProduct}=="1001", ATTRS{serial}=="30:ED:A0:34:56:4C", MODE="0660", TAG+="uaccess", ENV{ID_MM_DEVICE_IGNORE}="1"

@@ -1,0 +1,6 @@
+.pio/
+backups/
+compile_commands.json
+.vscode/
+__pycache__/
+/daemon/embeddeck
