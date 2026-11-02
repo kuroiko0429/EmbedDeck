@@ -1,15 +1,17 @@
-# Example user unit only: not installed or enabled by this project.
+# Example persistent user unit; installation instructions are in README.md.
 # Copy to ~/.config/systemd/user/embeddeck.service after reviewing ExecStart.
 # Requires a session that activates graphical-session.target; start manually
 # otherwise. Import HYPRLAND_INSTANCE_SIGNATURE into the user manager if
 # multiple compositor instances exist. Never run a second serial consumer.
 [Unit]
-Description=EmbedDeck USB CDC workspace bridge
+Description=EmbedDeck USB CDC desktop controller
 PartOf=graphical-session.target
 After=graphical-session.target
+ConditionFileIsExecutable=%h/Documents/EmbedDeck/daemon/embeddeck
 
 [Service]
 Type=simple
+Environment=XDG_RUNTIME_DIR=%t
 ExecStart=%h/Documents/EmbedDeck/daemon/embeddeck --port /dev/serial/by-id/usb-Espressif_USB_JTAG_serial_debug_unit_30:ED:A0:34:56:4C-if00 --max-workspace 10
 Restart=on-failure
 RestartSec=2

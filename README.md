@@ -48,14 +48,19 @@ GPIO14の8灯をAdafruit NeoPixel 1.12.3で制御。明るさは24/255に抑え�
 
 ## 起動・停止
 
-このセッションでは `embeddeck.service` を systemd-run の一時ユーザーサービスとして起動済み。
-`graphical-session.target` に PartOf で紐付けている。永続ユニットの導入・自動起動の有効化はしていない。
+`~/.config/systemd/user/embeddeck.service` に永続ユーザーユニットを導入し、`enable` 済み。
+現在のHyprlandセッションは `hyprland-session.target` が `graphical-session.target` を起動するため、次回のGUIログイン時に自動起動する構成。
+`PartOf=graphical-session.target` によりGUIログアウト時に停止する。lingerやシステム全体のサービスは有効化していない。
+USB未接続でもデーモン内で接続を待機し、異常終了時はsystemdが2秒後に再起動する。
+永続ユニットからの起動・USB状態読戻し・実行バイナリ一致は確認済み。実際のログアウト/再ログインでの起動確認は未実施。
 Hyprland の設定・キーバインドは変更していない。
 
 ```sh
 systemctl --user status embeddeck.service
 journalctl --user -u embeddeck.service -f
 systemctl --user stop embeddeck.service
+systemctl --user restart embeddeck.service
+systemctl --user is-enabled embeddeck.service
 ```
 
 手動起動（サービスを停止してから）:
@@ -65,21 +70,22 @@ cd /home/kuroiko/Documents/EmbedDeck
 ./daemon/embeddeck --max-workspace 10
 ```
 
-別セッションで一時サービスを起動:
+別環境へ導入する場合（先にGoをビルドし、ExecStartとUSB識別パスを確認する）。旧一時サービスが動いていれば先に停止する:
 
 ```sh
-systemd-run --user --unit=embeddeck --collect \
-  --property=PartOf=graphical-session.target \
-  --property=NoNewPrivileges=yes \
-  --setenv=XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" \
-  /home/kuroiko/Documents/EmbedDeck/daemon/embeddeck --max-workspace 10
+mkdir -p ~/.config/systemd/user
+cp tools/embeddeck.service.example ~/.config/systemd/user/embeddeck.service
+systemd-analyze --user verify ~/.config/systemd/user/embeddeck.service
+systemctl --user daemon-reload
+systemctl --user enable --now embeddeck.service
 ```
 
 USB は既定でこの実機の by-id パスを使用。別ボードは `--port /dev/serial/by-id/...` を指定。
 デーモンとシリアルモニターを同時に開かないこと。ファーム書き込み前にもデーモンを止める。
 USB 切断時は1秒間隔で再接続を試行する。
 Linuxでは非ブロッキングTTY＋Goのポーラー／書き込み期限を使用し、詰まった書き込みを約1秒で解除する。単にブロッキングwrite中のfdを別goroutineから閉じる方式には依存しない。raw115200 8N1・DTR/RTS=false・排他アクセスを維持する（期限／Close解除の保証はLinux限定、ハードリアルタイムではない）。
-永続化用の参考は `tools/embeddeck.service.example`（未導入）。
+ユニットのひな形は `tools/embeddeck.service.example`。実行ファイルは引き続きこのリポジトリの `daemon/embeddeck` を使うので、移動した場合はExecStartを変更してdaemon-reloadする。
+自動起動の解除と停止は `systemctl --user disable --now embeddeck.service`。
 
 ## 構成
 
@@ -180,7 +186,7 @@ TFT_eSPI の TOUCH_CS 未定義警告は非タッチ液晶のため想定内。
 - ユーザー実機確認: ダイヤルを上にした縦UIの向き・配置・操作が正常
 - ユーザー実機確認: UI、左右回転、両ボタン、キーボードからの同期、USB 抜き差し後の復帰すべて正常
 
-未検証・未対応: 他 OS/DE、BLE/HID、電池駆動の長時間安定性、ログアウト/再ログイン後の自動起動。
+未検証・未対応: 他 OS/DE、BLE/HID、電池駆動の長時間安定性。GUIログイン時の自動起動は設定済みだが、実際の再ログイン確認は未実施。
 
 ## ハードウェア
 
